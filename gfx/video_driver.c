@@ -322,6 +322,12 @@ uintptr_t video_driver_get_current_framebuffer(void)
    return 0;
 }
 
+bool video_driver_get_current_software_framebuffer(struct retro_framebuffer *framebuffer)
+{
+   if (video_driver_poke && video_driver_poke->get_current_software_framebuffer)
+      return video_driver_poke->get_current_software_framebuffer(video_driver_data, framebuffer);
+   return false;
+}
 
 retro_proc_address_t video_driver_get_proc_address(const char *sym)
 {
@@ -451,15 +457,6 @@ error:
    retro_fail(1, "init_video_input()");
 }
 
-static void video_driver_unset_callback(void)
-{
-   struct retro_hw_render_callback *hw_render =
-      video_driver_callback();
-
-   if (hw_render)
-      hw_render = NULL;
-}
-
 /**
  * video_monitor_compute_fps_statistics:
  *
@@ -512,9 +509,23 @@ static void deinit_pixel_converter(void)
    video_driver_scaler_ptr             = NULL;
 }
 
+void video_driver_callback_destroy_context(void)
+{
+   const struct retro_hw_render_callback *hw_render =
+      (const struct retro_hw_render_callback*)video_driver_callback();
+   if (hw_render->context_destroy)
+      hw_render->context_destroy();
+}
+
 static bool uninit_video_input(void)
 {
    event_command(EVENT_CMD_OVERLAY_DEINIT);
+
+   if (!video_driver_ctl(RARCH_DISPLAY_CTL_IS_VIDEO_CACHE_CONTEXT, NULL))
+   {
+      video_driver_callback_destroy_context();
+      video_driver_unset_callback();
+   }
 
    if (
          !input_driver_ctl(RARCH_INPUT_CTL_OWNS_DRIVER, NULL) &&
@@ -533,7 +544,6 @@ static bool uninit_video_input(void)
 
    deinit_video_filter();
 
-   video_driver_unset_callback();
    event_command(EVENT_CMD_SHADER_DIR_DEINIT);
    video_monitor_compute_fps_statistics();
 
@@ -1072,6 +1082,12 @@ void video_driver_set_aspect_ratio_value(float value)
 struct retro_hw_render_callback *video_driver_callback(void)
 {
    return &video_driver_state.hw_render_callback;
+}
+
+void video_driver_unset_callback(void)
+{
+   memset(&video_driver_state.hw_render_callback, 0,
+         sizeof(video_driver_state.hw_render_callback));
 }
 
 static bool video_driver_frame_filter(const void *data,
@@ -1946,14 +1962,13 @@ bool video_driver_texture_load(void *data,
       enum texture_filter_type  filter_type,
       unsigned *id)
 {
+#ifdef HAVE_THREADS
    settings_t *settings = config_get_ptr();
    const struct retro_hw_render_callback *hw_render =
       (const struct retro_hw_render_callback*)video_driver_callback();
+#endif
 
-   if (!id)
-      return false;
-
-   if (!video_driver_poke || !video_driver_poke->load_texture)
+   if (!id || !video_driver_poke || !video_driver_poke->load_texture)
       return false;
 
    *id = video_driver_poke->load_texture(video_driver_data, data,

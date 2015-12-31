@@ -15,6 +15,7 @@
 
 #include <file/file_path.h>
 #include <retro_stat.h>
+#include <string/stdstring.h>
 
 #include "../menu_driver.h"
 #include "../menu_cbs.h"
@@ -228,10 +229,10 @@ int generic_action_ok_displaylist_push(const char *path,
       case ACTION_OK_DL_CONFIGURATIONS_LIST:
          info.type          = type;
          info.directory_ptr = idx;
-         if (settings->menu_config_directory[0] != '\0')
-            info_path        = settings->menu_config_directory;
-         else
+         if (string_is_empty(settings->menu_config_directory))
             info_path        = label;
+         else
+            info_path        = settings->menu_config_directory;
          info_label = label;
          break;
       case ACTION_OK_DL_COMPRESSED_ARCHIVE_PUSH_DETECT_CORE:
@@ -298,6 +299,12 @@ int generic_action_ok_displaylist_push(const char *path,
          info.directory_ptr = idx;
          info_path          = path;
          info_label         = menu_hash_to_str(MENU_LABEL_DEFERRED_CORE_CONTENT_LIST);
+         break;
+      case ACTION_OK_DL_LAKKA_LIST:
+         info.type          = type;
+         info.directory_ptr = idx;
+         info_path          = path;
+         info_label         = menu_hash_to_str(MENU_LABEL_DEFERRED_LAKKA_LIST);
          break;
       case ACTION_OK_DL_DEFERRED_CORE_LIST:
          info.directory_ptr = idx;
@@ -1160,6 +1167,14 @@ static int action_ok_download_generic(const char *path,
       fill_pathname_join(s, settings->network.buildbot_assets_url,
             "cores/gw", sizeof(s));
    }
+#ifdef HAVE_LAKKA
+   else if (!strcmp(type_msg, "cb_lakka_download"))
+   {
+      /* TODO unhardcode this path*/
+      fill_pathname_join(s, "http://sources.lakka.tv/nightly",
+            LAKKA_PROJECT, sizeof(s));
+   }
+#endif
    else if (!strcmp(type_msg, "cb_update_assets"))
       path = "assets.zip";
    else if (!strcmp(type_msg, "cb_update_autoconfig_profiles"))
@@ -1207,6 +1222,13 @@ static int action_ok_core_updater_download(const char *path,
 {
    return action_ok_download_generic(path, label, type, idx, entry_idx,
          "cb_core_updater_download");
+}
+
+static int action_ok_lakka_download(const char *path,
+      const char *label, unsigned type, size_t idx, size_t entry_idx)
+{
+   return action_ok_download_generic(path, label, type, idx, entry_idx,
+         "cb_lakka_download");
 }
 
 static int action_ok_update_assets(const char *path,
@@ -1296,9 +1318,9 @@ static int action_ok_option_create(const char *path,
    /* Config directory: config_directory.
    * Try config directory setting first,
    * fallback to the location of the current configuration file. */
-   if (settings->menu_config_directory[0] != '\0')
+   if (!string_is_empty(settings->menu_config_directory))
       strlcpy(config_directory, settings->menu_config_directory, PATH_MAX_LENGTH);
-   else if (global->path.config[0] != '\0')
+   else if (!string_is_empty(global->path.config))
       fill_pathname_basedir(config_directory, global->path.config, PATH_MAX_LENGTH);
    else
    {
@@ -1306,12 +1328,10 @@ static int action_ok_option_create(const char *path,
       return false;
    }
 
-   core_name = system ? system->info.library_name : NULL;
+   core_name = system ? system->info.library_name        : NULL;
    game_name = global ? path_basename(global->name.base) : NULL;
 
-   if (!core_name  || !game_name)
-      return false;
-   if (core_name[0] == '\0' || game_name == '\0')
+   if (string_is_empty(core_name) || string_is_empty(game_name))
       return false;
 
    /* Concatenate strings into full paths for game_path */
@@ -1405,7 +1425,8 @@ static int action_ok_lookup_setting(const char *path,
 enum
 {
    ACTION_OK_NETWORK_CORE_CONTENT_LIST = 0,
-   ACTION_OK_NETWORK_CORE_UPDATER_LIST
+   ACTION_OK_NETWORK_CORE_UPDATER_LIST,
+   ACTION_OK_NETWORK_LAKKA_LIST
 };
 
 static int generic_action_ok_network(const char *path,
@@ -1421,7 +1442,7 @@ static int generic_action_ok_network(const char *path,
 
    menu_entries_ctl(MENU_ENTRIES_CTL_SET_REFRESH, &refresh);
 
-   if (settings->network.buildbot_url[0] == '\0')
+   if (string_is_empty(settings->network.buildbot_url))
       return -1;
 
    event_command(EVENT_CMD_NETWORK_INIT);
@@ -1442,6 +1463,18 @@ static int generic_action_ok_network(const char *path,
          type_id2  = ACTION_OK_DL_CORE_UPDATER_LIST;
          callback = cb_net_generic;
          break;
+#ifdef HAVE_LAKKA
+      case ACTION_OK_NETWORK_LAKKA_LIST:
+         /* TODO unhardcode this path */
+         fill_pathname_join(url_path, "http://sources.lakka.tv/nightly",
+               LAKKA_PROJECT, sizeof(url_path));
+         fill_pathname_join(url_path, url_path,
+               ".index", sizeof(url_path));
+         url_label = "cb_lakka_list";
+         type_id2  = ACTION_OK_DL_LAKKA_LIST;
+         callback = cb_net_generic;
+         break;
+#endif
    }
 
    rarch_task_push_http_transfer(url_path, url_label, callback, NULL);
@@ -1463,6 +1496,14 @@ static int action_ok_core_updater_list(const char *path,
    return generic_action_ok_network(path, label, type, idx, entry_idx,
          ACTION_OK_NETWORK_CORE_UPDATER_LIST);
 }
+
+static int action_ok_lakka_list(const char *path,
+      const char *label, unsigned type, size_t idx, size_t entry_idx)
+{
+   return generic_action_ok_network(path, label, type, idx, entry_idx,
+         ACTION_OK_NETWORK_LAKKA_LIST);
+}
+
 #endif
 
 
@@ -1922,7 +1963,7 @@ static int menu_cbs_init_bind_ok_compare_label(menu_file_list_cbs_t *cbs,
 {
    uint32_t elem0_hash      = menu_hash_calculate(elem0);
 
-   if (elem0[0] != '\0' && (is_rdb_entry(elem0_hash) == 0))
+   if (!string_is_empty(elem0) && (is_rdb_entry(elem0_hash) == 0))
    {
       BIND_ACTION_OK(cbs, action_ok_rdb_entry_submenu);
       return 0;
@@ -2029,6 +2070,9 @@ static int menu_cbs_init_bind_ok_compare_label(menu_file_list_cbs_t *cbs,
          break;
       case MENU_LABEL_VALUE_CORE_UPDATER_LIST:
          BIND_ACTION_OK(cbs, action_ok_core_updater_list);
+         break;
+      case MENU_LABEL_UPDATE_LAKKA:
+         BIND_ACTION_OK(cbs, action_ok_lakka_list);
          break;
 #endif
       case MENU_LABEL_VIDEO_SHADER_PARAMETERS:
@@ -2293,6 +2337,9 @@ static int menu_cbs_init_bind_ok_compare_type(menu_file_list_cbs_t *cbs,
             break;
          case MENU_FILE_DOWNLOAD_CORE:
             BIND_ACTION_OK(cbs, action_ok_core_updater_download);
+            break;
+         case MENU_FILE_DOWNLOAD_LAKKA:
+            BIND_ACTION_OK(cbs, action_ok_lakka_download);
             break;
          case MENU_FILE_DOWNLOAD_CORE_INFO:
             break;

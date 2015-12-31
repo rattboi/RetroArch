@@ -217,6 +217,7 @@ typedef struct video_poke_interface
    void (*grab_mouse_toggle)(void *data);
 
    struct video_shader *(*get_current_shader)(void *data);
+   bool (*get_current_software_framebuffer)(void *data, struct retro_framebuffer *framebuffer);
 } video_poke_interface_t;
 
 typedef struct video_viewport
@@ -371,6 +372,8 @@ void *video_driver_get_ptr(bool force_nonthreaded_data);
  **/
 uintptr_t video_driver_get_current_framebuffer(void);
 
+bool video_driver_get_current_software_framebuffer(struct retro_framebuffer *framebuffer);
+
 retro_proc_address_t video_driver_get_proc_address(const char *sym);
 
 bool video_driver_set_shader(enum rarch_shader_type type,
@@ -422,6 +425,8 @@ float video_driver_get_aspect_ratio(void);
 void video_driver_set_aspect_ratio_value(float value);
 
 struct retro_hw_render_callback *video_driver_callback(void);
+void video_driver_unset_callback(void);
+void video_driver_callback_destroy_context(void);
 
 rarch_softfilter_t *video_driver_frame_filter_get_ptr(void);
 

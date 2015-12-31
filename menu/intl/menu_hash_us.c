@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include <compat/strl.h>
+#include <string/stdstring.h>
 
 #include "../menu_hash.h"
 #include "../../configuration.h"
@@ -124,6 +125,8 @@ static const char *menu_hash_to_str_us_label(uint32_t hash)
          return "update_core_info_files";
       case MENU_LABEL_DEFERRED_CORE_CONTENT_LIST:
          return "deferred_core_content_list";
+      case MENU_LABEL_DEFERRED_LAKKA_LIST:
+         return "deferred_lakka_list";
       case MENU_LABEL_DOWNLOAD_CORE_CONTENT:
          return "download_core_content";
       case MENU_LABEL_SCAN_THIS_DIRECTORY:
@@ -670,6 +673,8 @@ static const char *menu_hash_to_str_us_label(uint32_t hash)
          return "audio_dsp_plugin";
       case MENU_LABEL_UPDATE_ASSETS:
          return "update_assets";
+      case MENU_LABEL_UPDATE_LAKKA:
+         return "update_lakka";
       case MENU_LABEL_UPDATE_CHEATS:
          return "update_cheats";
       case MENU_LABEL_UPDATE_AUTOCONFIG_PROFILES:
@@ -1352,6 +1357,8 @@ const char *menu_hash_to_str_us(uint32_t hash)
          return "ON";
       case MENU_LABEL_VALUE_UPDATE_ASSETS:
          return "Update Assets";
+      case MENU_LABEL_VALUE_UPDATE_LAKKA:
+         return "Update Lakka";
       case MENU_LABEL_VALUE_UPDATE_CHEATS:
          return "Update Cheats";
       case MENU_LABEL_VALUE_UPDATE_AUTOCONFIG_PROFILES:
@@ -2704,7 +2711,7 @@ int menu_hash_get_help_us(uint32_t hash, char *s, size_t len)
                menu_hash_to_str(MENU_LABEL_VALUE_INPUT_OVERLAY_HIDE_IN_MENU)
                );
       default:
-         if (s[0] == '\0')
+         if (string_is_empty(s))
             strlcpy(s, menu_hash_to_str(MENU_LABEL_VALUE_NO_INFORMATION_AVAILABLE), len);
          return -1;
    }

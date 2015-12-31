@@ -15,6 +15,7 @@
  */
 
 #include <compat/posix_string.h>
+#include <string/stdstring.h>
 
 #include "general.h"
 #include "msg_hash.h"
@@ -139,7 +140,7 @@ int find_driver_index(const char * label, const char *drv)
    {
       if (!obj)
          return -1;
-      if (str[0] == '\0')
+      if (string_is_empty(str))
          break;
       if (!strcasecmp(drv, str))
          return i;
@@ -404,15 +405,6 @@ static void uninit_drivers(int flags)
    if (flags & DRIVERS_VIDEO_INPUT)
       video_driver_ctl(RARCH_DISPLAY_CTL_DEINIT, NULL);
 
-   if (flags & DRIVER_VIDEO)
-   {
-      const struct retro_hw_render_callback *hw_render = 
-         (const struct retro_hw_render_callback*)video_driver_callback();
-
-      if (hw_render->context_destroy && !video_driver_ctl(RARCH_DISPLAY_CTL_IS_VIDEO_CACHE_CONTEXT, NULL))
-         hw_render->context_destroy();
-   }
-
    if ((flags & DRIVER_VIDEO) && !video_driver_ctl(RARCH_DISPLAY_CTL_OWNS_DRIVER, NULL))
       video_driver_ctl(RARCH_DISPLAY_CTL_DESTROY_DATA, NULL);
 
@@ -478,11 +470,10 @@ bool driver_ctl(enum driver_ctl_state state, void *data)
       case RARCH_DRIVER_CTL_UPDATE_SYSTEM_AV_INFO:
          {
             const struct retro_system_av_info **info = (const struct retro_system_av_info**)data;
-            if (!info)
-               return false;
-            return driver_update_system_av_info(*info);
+            if (info)
+               return driver_update_system_av_info(*info);
          }
-         return true;
+         return false;
       case RARCH_DRIVER_CTL_NONE:
       default:
          break;

@@ -21,6 +21,7 @@
 #include <compat/strl.h>
 #include <compat/posix_string.h>
 #include <dynamic/dylib.h>
+#include <string/stdstring.h>
 
 #include <boolean.h>
 
@@ -38,6 +39,7 @@
 
 #include "libretro_private.h"
 #include "cores/internal_cores.h"
+#include "frontend/frontend_driver.h"
 #include "retroarch.h"
 #include "configuration.h"
 #include "general.h"
@@ -569,19 +571,19 @@ static void rarch_log_libretro(enum retro_log_level level,
    switch (level)
    {
       case RETRO_LOG_DEBUG:
-         RARCH_LOG_V("[libretro DEBUG] :: ", fmt, vp);
+         RARCH_LOG_V("[libretro DEBUG]", fmt, vp);
          break;
 
       case RETRO_LOG_INFO:
-         RARCH_LOG_OUTPUT_V("[libretro INFO] :: ", fmt, vp);
+         RARCH_LOG_OUTPUT_V("[libretro INFO]", fmt, vp);
          break;
 
       case RETRO_LOG_WARN:
-         RARCH_WARN_V("[libretro WARN] :: ", fmt, vp);
+         RARCH_WARN_V("[libretro WARN]", fmt, vp);
          break;
 
       case RETRO_LOG_ERROR:
-         RARCH_ERR_V("[libretro ERROR] :: ", fmt, vp);
+         RARCH_ERR_V("[libretro ERROR]", fmt, vp);
          break;
 
       default:
@@ -633,10 +635,10 @@ bool rarch_environment_cb(unsigned cmd, void *data)
          {
             struct retro_variable *var = (struct retro_variable*)data;
 
-            RARCH_LOG("Environ GET_VARIABLE %s:\n", var->key);
-            if (var)
+            if (var) {
+               RARCH_LOG("Environ GET_VARIABLE %s: not implemented.\n", var->key);
                var->value = NULL;
-            RARCH_LOG("\t%s\n", var->value ? var->value : "N/A");
+            }
          }
 
          break;
@@ -691,7 +693,7 @@ bool rarch_environment_cb(unsigned cmd, void *data)
          break;
 
       case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
-         if (settings->system_directory[0] == '\0')
+         if (string_is_empty(settings->system_directory))
          {
             char *fullpath = NULL;
             runloop_ctl(RUNLOOP_CTL_GET_CONTENT_PATH, &fullpath);
@@ -1202,6 +1204,9 @@ bool rarch_environment_cb(unsigned cmd, void *data)
          }
          break;
       }
+
+      case RETRO_ENVIRONMENT_GET_CURRENT_SOFTWARE_FRAMEBUFFER:
+         return video_driver_get_current_software_framebuffer((struct retro_framebuffer*)data);
 
       /* Private extensions for internal use, not part of libretro API. */
       case RETRO_ENVIRONMENT_SET_LIBRETRO_PATH:

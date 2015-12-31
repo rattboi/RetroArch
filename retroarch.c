@@ -24,6 +24,7 @@
 #include <setjmp.h>
 
 #include <boolean.h>
+#include <string/stdstring.h>
 
 #ifdef _WIN32
 #ifdef _XBOX
@@ -97,7 +98,6 @@ enum
    RA_OPT_MAX_FRAMES
 };
 
-static char current_savestate_dir[PATH_MAX_LENGTH];
 static char current_savefile_dir[PATH_MAX_LENGTH];
 
 static char error_string[PATH_MAX_LENGTH];
@@ -333,7 +333,7 @@ static void set_special_paths(char **argv, unsigned num_content)
    /* If this is already set,
     * do not overwrite it as this was initialized before in
     * a menu or otherwise. */
-   if (settings->system_directory[0] == '\0')
+   if (string_is_empty(settings->system_directory))
    {
       RARCH_WARN("SYSTEM DIR is empty, assume CONTENT DIR %s\n",argv[0]);
       /*fill_pathname_basedir(settings->system_directory, argv[0],
@@ -352,6 +352,7 @@ const char *rarch_get_current_savefile_dir(void)
 
 static void set_paths_redirect(const char *path)
 {
+   char current_savestate_dir[PATH_MAX_LENGTH];
    uint32_t global_library_name_hash   = 0;
    bool check_global_library_name_hash = false;
    global_t                *global     = global_get_ptr();
@@ -359,9 +360,13 @@ static void set_paths_redirect(const char *path)
    rarch_system_info_t      *info      = NULL;
    
    runloop_ctl(RUNLOOP_CTL_SYSTEM_INFO_GET, &info);
-
-   if (global && info->info.library_name &&
-            (info->info.library_name[0] != '\0'))
+   if (!global)
+   {
+    RARCH_WARN("set_paths_redirect was sent a NULL \"global\" pointer.");
+    return;
+   }
+   if (info->info.library_name &&
+            !string_is_empty(info->info.library_name))
          global_library_name_hash = msg_hash_calculate(info->info.library_name);
 
    /* Initialize current save directories with the values from the config */
@@ -381,7 +386,8 @@ static void set_paths_redirect(const char *path)
    if (check_global_library_name_hash)
    {
       /* per-core saves: append the library_name to the save location */
-      if (settings->sort_savefiles_enable && global->dir.savefile[0] != '\0')
+      if (settings->sort_savefiles_enable 
+            && !string_is_empty(global->dir.savefile))
       {
          fill_pathname_join(
                current_savefile_dir,
@@ -391,7 +397,8 @@ static void set_paths_redirect(const char *path)
 
          /* If path doesn't exist, try to create it,
           * if everything fails revert to the original path. */
-         if(!path_is_directory(current_savefile_dir) && current_savefile_dir[0] != '\0')
+         if(!path_is_directory(current_savefile_dir) 
+               && !string_is_empty(current_savefile_dir))
          {
             path_mkdir(current_savefile_dir);
             if(!path_is_directory(current_savefile_dir))
@@ -405,7 +412,8 @@ static void set_paths_redirect(const char *path)
       }
 
       /* per-core states: append the library_name to the save location */
-      if (settings->sort_savestates_enable && global->dir.savestate[0] != '\0')
+      if (settings->sort_savestates_enable 
+            && !string_is_empty(global->dir.savestate))
       {
          fill_pathname_join(
                current_savestate_dir,
@@ -415,7 +423,8 @@ static void set_paths_redirect(const char *path)
 
          /* If path doesn't exist, try to create it.
           * If everything fails, revert to the original path. */
-         if(!path_is_directory(current_savestate_dir) && current_savestate_dir[0] != '\0')
+         if(!path_is_directory(current_savestate_dir) && 
+               !string_is_empty(current_savestate_dir))
          {
             path_mkdir(current_savestate_dir);
             if(!path_is_directory(current_savestate_dir))
@@ -1535,7 +1544,7 @@ void rarch_playlist_load_content(void *data, unsigned idx)
    content_playlist_get_index(playlist,
          idx, &path, NULL, &core_path, NULL, NULL, NULL);
 
-   if (path && path[0] != '\0')
+   if (path && !string_is_empty(path))
    {
       unsigned i;
       RFILE *fp           = NULL;
@@ -1638,6 +1647,7 @@ int rarch_defer_core(void *data, const char *dir,
    }
    else
 #endif
+    if (info)
       strlcpy(new_core_path, info->path, sizeof(new_core_path));
 
    /* There are multiple deferred cores and a

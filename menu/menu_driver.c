@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include <file/file_path.h>
+#include <string/stdstring.h>
 
 #include "menu_driver.h"
 #include "menu_cbs.h"
@@ -541,6 +542,7 @@ static void menu_free(menu_handle_t *menu)
    free(menu);
 }
 
+#ifdef HAVE_ZLIB
 static void bundle_decompressed(void *task_data, void *user_data, const char *err)
 {
    settings_t      *settings   = config_get_ptr();
@@ -562,6 +564,7 @@ static void bundle_decompressed(void *task_data, void *user_data, const char *er
    settings->bundle_assets_extract_last_version = settings->bundle_assets_extract_version_current;
    settings->bundle_finished = true;
 }
+#endif
 
 /**
  * menu_init:
@@ -602,15 +605,19 @@ void *menu_init(const void *data)
    menu->help_screen_type           = MENU_HELP_WELCOME;
    settings->menu_show_start_screen = false;
 
-   if (settings->bundle_assets_extract_enable &&
-         settings->bundle_assets_src_path[0] != '\0' && settings->bundle_assets_dst_path[0] != '\0' &&
-         settings->bundle_assets_extract_version_current != settings->bundle_assets_extract_last_version
+   if (
+             settings->bundle_assets_extract_enable
+         && !string_is_empty(settings->bundle_assets_src_path) 
+         && !string_is_empty(settings->bundle_assets_dst_path)
+         && settings->bundle_assets_extract_version_current != settings->bundle_assets_extract_last_version
       )
    {
       menu->help_screen_type           = MENU_HELP_EXTRACT;
       menu->push_help_screen           = true;
+#ifdef HAVE_ZLIB
       rarch_task_push_decompress(settings->bundle_assets_src_path, settings->bundle_assets_dst_path,
          settings->bundle_assets_dst_path_subdir, NULL, bundle_decompressed, NULL);
+#endif
    }
 
    menu_shader_manager_init(menu);
@@ -653,7 +660,7 @@ bool menu_driver_ctl(enum rarch_menu_ctl_state state, void *data)
       case RARCH_MENU_CTL_PLAYLIST_INIT:
          {
             const char *path = (const char*)data;
-            if (!path || path[0] == '\0')
+            if (string_is_empty(path))
                return false;
             menu_driver_playlist  = content_playlist_init(path,
                   COLLECTION_SIZE);

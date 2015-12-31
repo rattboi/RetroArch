@@ -26,6 +26,7 @@
 #ifdef HAVE_THREADS
 #include <rthreads/rthreads.h>
 #endif
+#include <string/stdstring.h>
 
 #include <compat/strl.h>
 
@@ -71,14 +72,26 @@
 #define DEFAULT_EXT ""
 #endif
 
+#define SHADER_EXT_GLSL      0x7c976537U
+#define SHADER_EXT_GLSLP     0x0f840c87U
+#define SHADER_EXT_CG        0x0059776fU
+#define SHADER_EXT_CGP       0x0b8865bfU
+
+#define runloop_cmd_triggered(cmd, id) BIT64_GET(cmd->state[2], id) 
+
+#define runloop_cmd_press(cmd, id)     BIT64_GET(cmd->state[0], id)
+#define runloop_cmd_pressed(cmd, id)   BIT64_GET(cmd->state[1], id)
+#ifdef HAVE_MENU
+#define runloop_cmd_menu_press(cmd)   (BIT64_GET(cmd->state[2], RARCH_MENU_TOGGLE) || \
+                                      runloop_cmd_get_state_menu_toggle_button_combo( \
+                                            settings, cmd->state[0], \
+                                            cmd->state[1], cmd->state[2]))
+#endif
+
 typedef struct event_cmd_state
 {
    retro_input_t state[3];
 } event_cmd_state_t;
-
-static rarch_dir_list_t runloop_shader_dir;
-
-static unsigned runloop_pending_windowed_scale;
 
 static msg_queue_t *g_msg_queue;
 
@@ -87,7 +100,6 @@ global_t *global_get_ptr(void)
    static struct global g_extern;
    return &g_extern;
 }
-
 
 const char *runloop_msg_queue_pull(void)
 {
@@ -167,17 +179,6 @@ static bool runloop_cmd_get_state_menu_toggle_button_combo(
    input_driver_ctl(RARCH_INPUT_CTL_SET_FLUSHING_INPUT, NULL);
    return true;
 }
-#endif
-
-#define runloop_cmd_triggered(cmd, id) BIT64_GET(cmd->state[2], id) 
-
-#define runloop_cmd_press(cmd, id)     BIT64_GET(cmd->state[0], id)
-#define runloop_cmd_pressed(cmd, id)   BIT64_GET(cmd->state[1], id)
-#ifdef HAVE_MENU
-#define runloop_cmd_menu_press(cmd)   (BIT64_GET(cmd->state[2], RARCH_MENU_TOGGLE) || \
-                                      runloop_cmd_get_state_menu_toggle_button_combo( \
-                                            settings, cmd->state[0], \
-                                            cmd->state[1], cmd->state[2]))
 #endif
 
 /**
@@ -288,19 +289,17 @@ static void check_stateslots(settings_t *settings,
    RARCH_LOG("%s\n", msg);
 }
 
-#define SHADER_EXT_GLSL      0x7c976537U
-#define SHADER_EXT_GLSLP     0x0f840c87U
-#define SHADER_EXT_CG        0x0059776fU
-#define SHADER_EXT_CGP       0x0b8865bfU
-
-static void shader_dir_free(void)
+static void shader_dir_free(rarch_dir_list_t *dir_list)
 {
-   dir_list_free(runloop_shader_dir.list);
-   runloop_shader_dir.list = NULL;
-   runloop_shader_dir.ptr  = 0;
+   if (!dir_list)
+      return;
+
+   dir_list_free(dir_list->list);
+   dir_list->list = NULL;
+   dir_list->ptr  = 0;
 }
 
-static bool shader_dir_init(void)
+static bool shader_dir_init(rarch_dir_list_t *dir_list)
 {
    unsigned i;
    settings_t *settings  = config_get_ptr();
@@ -308,21 +307,21 @@ static bool shader_dir_init(void)
    if (!*settings->video.shader_dir)
       return false;
 
-   runloop_shader_dir.list = dir_list_new_special(NULL, DIR_LIST_SHADERS, NULL);
+   dir_list->list = dir_list_new_special(NULL, DIR_LIST_SHADERS, NULL);
 
-   if (!runloop_shader_dir.list || runloop_shader_dir.list->size == 0)
+   if (!dir_list->list || dir_list->list->size == 0)
    {
       event_command(EVENT_CMD_SHADER_DIR_DEINIT);
       return false;
    }
 
-   runloop_shader_dir.ptr  = 0;
-   dir_list_sort(runloop_shader_dir.list, false);
+   dir_list->ptr  = 0;
+   dir_list_sort(dir_list->list, false);
 
-   for (i = 0; i < runloop_shader_dir.list->size; i++)
+   for (i = 0; i < dir_list->list->size; i++)
       RARCH_LOG("%s \"%s\"\n",
             msg_hash_to_str(MSG_FOUND_SHADER),
-            runloop_shader_dir.list->elems[i].data);
+            dir_list->list->elems[i].data);
    return true;
 }
 
@@ -337,7 +336,7 @@ static bool shader_dir_init(void)
  *
  * Will also immediately apply the shader.
  **/
-static void check_shader_dir(bool pressed_next, bool pressed_prev)
+static void check_shader_dir(rarch_dir_list_t *dir_list, bool pressed_next, bool pressed_prev)
 {
    uint32_t ext_hash;
    char msg[128];
@@ -345,25 +344,25 @@ static void check_shader_dir(bool pressed_next, bool pressed_prev)
    const char *ext             = NULL;
    enum rarch_shader_type type = RARCH_SHADER_NONE;
 
-   if (!runloop_shader_dir.list)
+   if (!dir_list || !dir_list->list)
       return;
 
    if (pressed_next)
    {
-      runloop_shader_dir.ptr = (runloop_shader_dir.ptr + 1) %
-         runloop_shader_dir.list->size;
+      dir_list->ptr = (dir_list->ptr + 1) %
+         dir_list->list->size;
    }
    else if (pressed_prev)
    {
-      if (runloop_shader_dir.ptr == 0)
-         runloop_shader_dir.ptr = runloop_shader_dir.list->size - 1;
+      if (dir_list->ptr == 0)
+         dir_list->ptr = dir_list->list->size - 1;
       else
-         runloop_shader_dir.ptr--;
+         dir_list->ptr--;
    }
    else
       return;
 
-   shader   = runloop_shader_dir.list->elems[runloop_shader_dir.ptr].data;
+   shader   = dir_list->list->elems[dir_list->ptr].data;
    ext      = path_get_extension(shader);
    ext_hash = msg_hash_calculate(ext);
 
@@ -383,7 +382,7 @@ static void check_shader_dir(bool pressed_next, bool pressed_prev)
 
    snprintf(msg, sizeof(msg), "%s #%u: \"%s\".",
          msg_hash_to_str(MSG_SHADER),
-         (unsigned)runloop_shader_dir.ptr, shader);
+         (unsigned)dir_list->ptr, shader);
    runloop_msg_queue_push(msg, 1, 120, true);
    RARCH_LOG("%s \"%s\".\n",
          msg_hash_to_str(MSG_APPLYING_SHADER),
@@ -418,9 +417,7 @@ static bool rarch_game_specific_options(char **output)
    core_name = system ? system->info.library_name : NULL;
    game_name = global ? path_basename(global->name.base) : NULL;
 
-   if (!core_name || !game_name)
-      return false;
-   if (core_name[0] == '\0' || game_name[0] == '\0')
+   if (string_is_empty(core_name) || string_is_empty(game_name))
       return false;
 
    RARCH_LOG("Per-Game Options: core name: %s\n", core_name);
@@ -429,9 +426,9 @@ static bool rarch_game_specific_options(char **output)
    /* Config directory: config_directory.
    * Try config directory setting first,
    * fallback to the location of the current configuration file. */
-   if (settings->menu_config_directory[0] != '\0')
+   if (!string_is_empty(settings->menu_config_directory))
       strlcpy(config_directory, settings->menu_config_directory, sizeof(config_directory));
-   else if (global->path.config[0] != '\0')
+   else if (!string_is_empty(global->path.config))
       fill_pathname_basedir(config_directory, global->path.config, sizeof(config_directory));
    else
    {
@@ -463,8 +460,10 @@ static void runloop_data_clear_state(void)
 
 bool runloop_ctl(enum runloop_ctl_state state, void *data)
 {
+   static rarch_dir_list_t runloop_shader_dir;
    static char runloop_fullpath[PATH_MAX_LENGTH];
    static rarch_system_info_t runloop_system;
+   static unsigned runloop_pending_windowed_scale;
    static retro_keyboard_event_t runloop_key_event = NULL;
    static unsigned runloop_max_frames              = false;
    static bool runloop_frame_time_last             = false;
@@ -491,10 +490,10 @@ bool runloop_ctl(enum runloop_ctl_state state, void *data)
          rarch_task_check();
          return true;
       case RUNLOOP_CTL_SHADER_DIR_DEINIT:
-         shader_dir_free();
+         shader_dir_free(&runloop_shader_dir);
          return true;
       case RUNLOOP_CTL_SHADER_DIR_INIT:
-         return shader_dir_init();
+         return shader_dir_init(&runloop_shader_dir);
       case RUNLOOP_CTL_SYSTEM_INFO_INIT:
          core.retro_get_system_info(&runloop_system.info);
 
@@ -585,7 +584,9 @@ bool runloop_ctl(enum runloop_ctl_state state, void *data)
             free(runloop_system.ports);
          runloop_system.ports   = NULL;
 
-         runloop_key_event      = NULL;
+         runloop_key_event = NULL;
+         global_get_ptr()->frontend_key_event = NULL;
+         audio_driver_unset_callback();
          memset(&runloop_system, 0, sizeof(rarch_system_info_t));
          break;
       case RUNLOOP_CTL_IS_FRAME_COUNT_END:
@@ -761,7 +762,7 @@ bool runloop_ctl(enum runloop_ctl_state state, void *data)
             if (runloop_cmd_triggered(cmd, RARCH_MOVIE_RECORD_TOGGLE))
                runloop_ctl(RUNLOOP_CTL_CHECK_MOVIE, NULL);
 
-            check_shader_dir(
+            check_shader_dir(&runloop_shader_dir,
                   runloop_cmd_triggered(cmd, RARCH_SHADER_NEXT),
                   runloop_cmd_triggered(cmd, RARCH_SHADER_PREV));
 
@@ -1181,6 +1182,7 @@ static void runloop_iterate_linefeed_overlay(settings_t *settings)
  */
 static INLINE int runloop_iterate_time_to_exit(bool quit_key_pressed)
 {
+   settings_t *settings          = NULL;
    bool time_to_exit             = runloop_ctl(RUNLOOP_CTL_IS_SHUTDOWN, NULL) || quit_key_pressed;
    time_to_exit                  = time_to_exit || (video_driver_ctl(RARCH_DISPLAY_CTL_IS_ALIVE, NULL) == false);
    time_to_exit                  = time_to_exit || bsv_movie_ctl(BSV_MOVIE_CTL_END_EOF, NULL);
@@ -1193,27 +1195,26 @@ static INLINE int runloop_iterate_time_to_exit(bool quit_key_pressed)
    if (runloop_ctl(RUNLOOP_CTL_IS_EXEC, NULL))
       runloop_ctl(RUNLOOP_CTL_UNSET_EXEC, NULL);
 
-   if (runloop_ctl(RUNLOOP_CTL_IS_CORE_SHUTDOWN, NULL))
-   {
-      /* Quits out of RetroArch main loop.
-       * On special case, loads dummy core
-       * instead of exiting RetroArch completely.
-       * Aborts core shutdown if invoked.
-       */
+   if (!runloop_ctl(RUNLOOP_CTL_IS_CORE_SHUTDOWN, NULL))
+      return -1;
 
-      settings_t *settings          = config_get_ptr();
-      if (!settings->load_dummy_on_core_shutdown)
-         return -1;
-      if (!runloop_ctl(RUNLOOP_CTL_PREPARE_DUMMY, NULL))
-         return -1;
+   /* Quits out of RetroArch main loop.
+    * On special case, loads dummy core
+    * instead of exiting RetroArch completely.
+    * Aborts core shutdown if invoked.
+    */
 
-      runloop_ctl(RUNLOOP_CTL_UNSET_SHUTDOWN,      NULL);
-      runloop_ctl(RUNLOOP_CTL_UNSET_CORE_SHUTDOWN, NULL);
+   settings = config_get_ptr();
 
-      return 0;
-   }
+   if (!settings->load_dummy_on_core_shutdown)
+      return -1;
+   if (!runloop_ctl(RUNLOOP_CTL_PREPARE_DUMMY, NULL))
+      return -1;
 
-   return -1;
+   runloop_ctl(RUNLOOP_CTL_UNSET_SHUTDOWN,      NULL);
+   runloop_ctl(RUNLOOP_CTL_UNSET_CORE_SHUTDOWN, NULL);
+
+   return 0;
 }
 
 /**

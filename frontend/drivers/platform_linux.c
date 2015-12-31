@@ -49,6 +49,17 @@
 #include "../../verbosity.h"
 #include "platform_linux.h"
 
+/* This small data type is used to represent a CPU list / mask, as read
+ * from sysfs on Linux. See http://www.kernel.org/doc/Documentation/cputopology.txt
+ *
+ * For now, we don't expect more than 32 cores on mobile devices, so keep
+ * everything simple.
+ */
+typedef struct
+{
+    uint32_t mask;
+} CpuList;
+
 static bool                cpu_inited_once;
 static  cpu_family         g_cpuFamily;
 static  uint64_t           g_cpuFeatures;
@@ -63,28 +74,11 @@ static  int                g_cpuCount;
 #endif
 
 #ifdef __i386__
-static void cpu_x86_cpuid(int func, int values[4])
-{
-    int a, b, c, d;
-    /* We need to preserve ebx since we're compiling PIC code */
-    /* this means we can't use "=b" for the second output register */
-    __asm__ __volatile__ ( \
-      "push %%ebx\n"
-      "cpuid\n" \
-      "mov %1, %%ebx\n"
-      "pop %%ebx\n"
-      : "=a" (a), "=r" (b), "=c" (c), "=d" (d) \
-      : "a" (func) \
-    );
-    values[0] = a;
-    values[1] = b;
-    values[2] = c;
-    values[3] = d;
-}
+void x86_cpuid(int func, int flags[4]);
 #endif
 
 #ifdef __ARM_ARCH__
-/* Extract the content of a the first occurence of a given field in
+/* Extract the content of a the first occurrence of a given field in
  * the content of /proc/cpuinfo and return it as a heap-allocated
  * string that must be freed by the caller.
  *
@@ -97,7 +91,7 @@ static char *extract_cpuinfo_field(char* buffer, ssize_t length, const char* fie
    int  fieldlen = strlen(field);
    char* bufend  = buffer + length;
    char* result  = NULL;
-   /* Look for first field occurence, and ensures it starts the line. */
+   /* Look for first field occurrence, and ensures it starts the line. */
    const char *p = buffer;
 
    bufend = buffer + length;
@@ -203,16 +197,6 @@ static const char *parse_decimal(const char* input, const char* limit, int* resu
     return p;
 }
 
-/* This small data type is used to represent a CPU list / mask, as read
- * from sysfs on Linux. See http://www.kernel.org/doc/Documentation/cputopology.txt
- *
- * For now, we don't expect more than 32 cores on mobile devices, so keep
- * everything simple.
- */
-typedef struct
-{
-    uint32_t mask;
-} CpuList;
 
 /* Parse a textual list of cpus and store the result inside a CpuList object.
  * Input format is the following:
@@ -423,29 +407,7 @@ static void linux_cpu_init(void)
 
 #ifdef __i386__
    g_cpuFamily = CPU_FAMILY_X86;
-
-   int regs[4];
-
-   /* According to http://en.wikipedia.org/wiki/CPUID */
-#define VENDOR_INTEL_b  0x756e6547
-#define VENDOR_INTEL_c  0x6c65746e
-#define VENDOR_INTEL_d  0x49656e69
-
-   cpu_x86_cpuid(0, regs);
-   int vendorIsIntel = (regs[1] == VENDOR_INTEL_b &&
-         regs[2] == VENDOR_INTEL_c &&
-         regs[3] == VENDOR_INTEL_d);
-
-   cpu_x86_cpuid(1, regs);
-   if ((regs[2] & (1 << 9)) != 0)
-      g_cpuFeatures |= CPU_X86_FEATURE_SSSE3;
-   if ((regs[2] & (1 << 23)) != 0)
-      g_cpuFeatures |= CPU_X86_FEATURE_POPCNT;
-   if (vendorIsIntel && (regs[2] & (1 << 22)) != 0)
-      g_cpuFeatures |= CPU_X86_FEATURE_MOVBE;
-#endif
-
-#ifdef _MIPS_ARCH
+#elif defined(_MIPS_ARCH)
    g_cpuFamily = CPU_FAMILY_MIPS;
 #endif
 
@@ -795,8 +757,12 @@ static struct android_app* android_app_create(ANativeActivity* activity,
    if (pipe(msgpipe))
    {
       RARCH_ERR("could not create pipe: %s.\n", strerror(errno));
+      if(android_app->savedState)
+        free(android_app->savedState);
+      free(android_app);
       return NULL;
    }
+
    android_app->msgread  = msgpipe[0];
    android_app->msgwrite = msgpipe[1];
 
