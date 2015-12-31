@@ -104,6 +104,126 @@ static const char *glsl_prefixes[] = {
 
 /* Need to duplicate these to work around broken stuff on Android.
  * Must enforce alpha = 1.0 or 32-bit games can potentially go black. */
+
+
+static const char *sbs_vertex_shader =
+	"#define eye_sep 0.65\n"
+	"#define y_loc 0.30\n"
+	"#define ana_zoom 1.1\n"
+	"#define WIDTH 2.65\n"
+	"#define BOTH 0.54\n"
+	"#define HEIGHT 2.5\n"
+	"#define palette 0.0\n"
+	"#define warpX 0.1\n"
+	"#define warpY 0.1\n"
+	"#if __VERSION__ >= 130\n"
+	"#define COMPAT_VARYING out\n"
+	"#define COMPAT_ATTRIBUTE in\n"
+	"#define COMPAT_TEXTURE texture\n"
+	"#else\n"
+	"#define COMPAT_VARYING varying\n"
+	"#define COMPAT_ATTRIBUTE attribute\n"
+	"#define COMPAT_TEXTURE texture2D\n"
+	"#endif\n"
+	"#ifdef GL_ES\n"
+	"#define COMPAT_PRECISION mediump\n"
+	"#else\n"
+	"#define COMPAT_PRECISION\n"
+	"#endif\n"
+	"COMPAT_ATTRIBUTE vec4 VertexCoord;\n"
+	"COMPAT_ATTRIBUTE vec4 COLOR;\n"
+	"COMPAT_ATTRIBUTE vec4 TexCoord;\n"
+	"COMPAT_VARYING vec4 COL0;\n"
+	"COMPAT_VARYING vec4 TEX0;\n"
+	"vec4 _oPosition1; \n"
+	"uniform mat4 MVPMatrix;\n"
+	"uniform int FrameDirection;\n"
+	"uniform int FrameCount;\n"
+	"uniform COMPAT_PRECISION vec2 OutputSize;\n"
+	"uniform COMPAT_PRECISION vec2 TextureSize;\n"
+	"uniform COMPAT_PRECISION vec2 InputSize;\n"
+	"void main()\n"
+	"{\n"
+	"    vec4 _oColor;\n"
+	"    vec2 _otexCoord;\n"
+	"    gl_Position = VertexCoord.x * MVPMatrix[0] + VertexCoord.y * MVPMatrix[1] + VertexCoord.z * MVPMatrix[2] + VertexCoord.w * MVPMatrix[3];\n"
+	"    _oPosition1 = gl_Position;\n"
+	"    _oColor = COLOR;\n"
+	"    _otexCoord = TexCoord.xy;\n"
+	"    COL0 = COLOR;\n"
+	"    vec2 shift = 0.5 * InputSize / TextureSize;\n"
+	"    TEX0.xy = ((TexCoord.xy - shift) * ana_zoom + shift) * vec2(WIDTH, HEIGHT) - vec2(BOTH, 0.0);\n"
+	"}\n";
+
+static const char *sbs_frag_shader =
+	"#define eye_sep 0.65\n"
+	"#define y_loc 0.30\n"
+	"#define ana_zoom 1.1\n"
+	"#define WIDTH 2.65\n"
+	"#define BOTH 0.54\n"
+	"#define HEIGHT 2.5\n"
+	"#define palette 0.0\n"
+	"#define warpX 0.1\n"
+	"#define warpY 0.1\n"
+	"#if __VERSION__ >= 130\n"
+	"#define COMPAT_VARYING in\n"
+	"#define COMPAT_TEXTURE texture\n"
+	"out vec4 FragColor;\n"
+	"#else\n"
+	"#define COMPAT_VARYING varying\n"
+	"#define FragColor gl_FragColor\n"
+	"#define COMPAT_TEXTURE texture2D\n"
+	"#endif\n"
+	"#ifdef GL_ES\n"
+	"#ifdef GL_FRAGMENT_PRECISION_HIGH\n"
+	"precision highp float;\n"
+	"#else\n"
+	"precision mediump float;\n"
+	"#endif\n"
+	"#define COMPAT_PRECISION mediump\n"
+	"#else\n"
+	"#define COMPAT_PRECISION\n"
+	"#endif\n"
+	"struct output_dummy {\n"
+	"    vec4 _color;\n"
+	"};\n"
+	"uniform int FrameDirection;\n"
+	"uniform int FrameCount;\n"
+	"uniform COMPAT_PRECISION vec2 OutputSize;\n"
+	"uniform COMPAT_PRECISION vec2 TextureSize;\n"
+	"uniform COMPAT_PRECISION vec2 InputSize;\n"
+	"uniform sampler2D Texture;\n"
+	"COMPAT_VARYING vec4 TEX0;\n"
+	"vec2 Warp(vec2 pos){\n"
+	"  pos.xy = pos.xy * 2.0-1.0;    \n"
+	"  pos.xy *= vec2(1.0+(pos.y*pos.y)*warpX,1.0+(pos.x*pos.x)*warpY);\n"
+	"  return pos*0.5+0.5;\n"
+	"}\n"
+	"void main()\n"
+	"{\n"
+	"	output_dummy _OUT;\n"
+	"	vec2 warpCoord1 = Warp((TEX0.xy - vec2(eye_sep,  y_loc))*(TextureSize.xy/InputSize.xy))*(InputSize.xy/TextureSize.xy);\n"
+	"	vec2 warpCoord2 = Warp((TEX0.xy + vec2(eye_sep, -y_loc))*(TextureSize.xy/InputSize.xy))*(InputSize.xy/TextureSize.xy);\n"
+	"	vec2 fragCoord1 = warpCoord1 * InputSize / TextureSize;\n"
+	"	vec2 fragCoord2 = warpCoord2 * InputSize / TextureSize;\n"
+	"	vec4 frame1 = vec4(0.0);\n"
+	"	if ( fragCoord1.x < 1.0 && fragCoord1.x > 0.0 && fragCoord1.y < 1.0 && fragCoord1.y > 0.0 )\n"
+	"		frame1 = COMPAT_TEXTURE(Texture, warpCoord1);\n"
+	"	vec4 frame2 = vec4(0.0);\n"
+	"	if ( fragCoord2.x < 1.0 && fragCoord2.x > 0.0 && fragCoord2.y < 1.0 && fragCoord2.y > 0.0 )\n"
+	"		frame2 = COMPAT_TEXTURE(Texture, warpCoord2);\n"
+	"	frame1.r = frame1.g;\n"
+	"	frame2.gb = vec2(frame2.r);\n"
+	"	vec4 final = vec4(0.0);\n"
+	"	if (palette > 0.5)\n"
+	"		final = frame1 + frame2;\n"
+	"	else\n"
+	"		final = vec4(frame1.r + frame2.r, 0.0, 0.0, 1.0);\n"
+	"	_OUT._color = final;\n"
+	"	FragColor = _OUT._color;\n"
+	"	return;\n"
+	"}\n";
+
 static const char *stock_vertex_modern =
    "attribute vec2 TexCoord;\n"
    "attribute vec2 VertexCoord;\n"
@@ -852,7 +972,7 @@ static void *gl_glsl_init(void *data, const char *path)
       }
    }
 
-   if (!(glsl->gl_program[0] = compile_program(glsl, stock_vertex, stock_fragment, 0)))
+   if (!(glsl->gl_program[0] = compile_program(glsl, sbs_vertex_shader, sbs_frag_shader, 0)))
    {
       RARCH_ERR("GLSL stock programs failed to compile.\n");
       goto error;
@@ -908,11 +1028,22 @@ static void *gl_glsl_init(void *data, const char *path)
             GL_SHADER_STOCK_BLEND);
       find_uniforms(glsl, 0, glsl->gl_program[GL_SHADER_STOCK_BLEND],
             &glsl->gl_uniforms[GL_SHADER_STOCK_BLEND]);
+
+      glsl->gl_program[GL_SHADER_SIDE_BY_SIDE] = compile_program(
+            glsl,
+            sbs_vertex_shader,
+            sbs_frag_shader,
+            GL_SHADER_SIDE_BY_SIDE);
+      find_uniforms(glsl, 0, glsl->gl_program[GL_SHADER_SIDE_BY_SIDE],
+            &glsl->gl_uniforms[GL_SHADER_SIDE_BY_SIDE]);
    }
    else
    {
       glsl->gl_program [GL_SHADER_STOCK_BLEND] = glsl->gl_program[0];
       glsl->gl_uniforms[GL_SHADER_STOCK_BLEND] = glsl->gl_uniforms[0];
+
+      glsl->gl_program [GL_SHADER_SIDE_BY_SIDE] = glsl->gl_program[0];
+      glsl->gl_uniforms[GL_SHADER_SIDE_BY_SIDE] = glsl->gl_uniforms[0];
    }
 
    gl_glsl_reset_attrib(glsl);

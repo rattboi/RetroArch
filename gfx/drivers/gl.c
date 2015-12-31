@@ -1616,7 +1616,7 @@ static INLINE void gl_draw_texture(gl_t *gl)
    gl->coords.color     = color;
    glBindTexture(GL_TEXTURE_2D, gl->menu_texture);
 
-   video_shader_driver_use(gl, GL_SHADER_STOCK_BLEND);
+   video_shader_driver_use(gl, GL_SHADER_SIDE_BY_SIDE);
    gl->coords.vertices  = 4;
    video_shader_driver_set_coords(NULL, &gl->coords);
    video_shader_driver_set_mvp(gl, &gl->mvp_no_rot);
